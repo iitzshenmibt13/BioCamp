@@ -63,3 +63,8 @@ app.include_router(ws_router, prefix="/api", tags=["websocket"])
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/")
+async def root():
+    return {"message": "Camp Ops API — visit /docs for API reference"}
