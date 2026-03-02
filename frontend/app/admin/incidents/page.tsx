@@ -1,57 +1,87 @@
 "use client";
-/** Admin: Incident reports – view, status update, internal notes. */
-import { useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
+import { useState } from "react";
+import { AdminShell } from "@/components/AdminShell";
+import { MOCK_INCIDENTS, MOCK_USER_ADMIN } from "@/lib/mock";
+import { formatRelative, cn } from "@/lib/utils";
+import type { Incident, IncidentStatus } from "@/lib/types";
 import toast from "react-hot-toast";
 
-const SEVERITY_COLOR: Record<string, string> = { low: "bg-yellow-900 text-yellow-300", medium: "bg-orange-900 text-orange-300", high: "bg-red-900 text-red-300 animate-pulse" };
-const STATUS_COLOR: Record<string, string> = { new: "bg-blue-900 text-blue-300", triaged: "bg-purple-900 text-purple-300", resolved: "bg-green-900 text-green-300" };
+const SEV_STYLE: Record<string, string> = {
+    high: "bg-red-100 text-danger border-red-200",
+    medium: "bg-amber-100 text-warning border-amber-200",
+    low: "bg-gray-100 text-gray-600 border-gray-200",
+};
+const STATUS_STYLE: Record<string, string> = {
+    new: "bg-red-50 text-danger",
+    triaged: "bg-amber-50 text-warning",
+    resolved: "bg-green-50 text-success",
+};
 
 export default function AdminIncidentsPage() {
-    const [incidents, setIncidents] = useState<any[]>([]);
-    const [expanded, setExpanded] = useState<string | null>(null);
+    const user = MOCK_USER_ADMIN;
+    const [incidents, setIncidents] = useState([...MOCK_INCIDENTS].sort((a, b) => {
+        const sev = { high: 0, medium: 1, low: 2 };
+        return sev[a.severity] - sev[b.severity];
+    }));
+    const [selected, setSelected] = useState<Incident | null>(null);
     const [notes, setNotes] = useState("");
+    const [newStatus, setNewStatus] = useState<IncidentStatus>("triaged");
 
-    const load = useCallback(async () => { const r = await api.get("/api/incidents"); setIncidents(r.data); }, []);
-    useEffect(() => { load(); }, [load]);
-
-    const update = async (id: string, status: string) => {
-        try {
-            await api.patch(`/api/incidents/${id}`, { status, internal_notes: notes });
-            toast.success("Updated!"); await load(); setExpanded(null);
-        } catch { toast.error("Failed"); }
-    };
+    function updateIncident() {
+        setIncidents(p => p.map(i => i.id === selected?.id ? { ...i, status: newStatus, internalNotes: notes } : i));
+        toast.success("Updated!");
+        setSelected(null);
+    }
 
     return (
-        <div className="space-y-4">
-            <h1 className="text-2xl font-bold text-white">🚨 Incident Reports</h1>
-            {incidents.length === 0 && <p className="text-gray-400 text-center py-8">No incidents reported.</p>}
-            {incidents.map(i => (
-                <div key={i.id} className="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden">
-                    <button className="w-full text-left p-4 flex items-start gap-3" onClick={() => { setExpanded(expanded === i.id ? null : i.id); setNotes(i.internal_notes || ""); }}>
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className={`badge ${SEVERITY_COLOR[i.severity]}`}>{i.severity}</span>
-                                <span className={`badge ${STATUS_COLOR[i.status]}`}>{i.status}</span>
-                                <span className="text-gray-400 text-xs capitalize">{i.category}</span>
+        <AdminShell user={user} title="Incident Reports">
+            <div className="grid md:grid-cols-2 gap-4">
+                {/* Inbox */}
+                <div className="space-y-2">
+                    {incidents.map(inc => (
+                        <button key={inc.id} onClick={() => { setSelected(inc); setNotes(inc.internalNotes || ""); setNewStatus(inc.status); }}
+                            className={cn("card p-4 w-full text-left hover:shadow-lifted transition-shadow", selected?.id === inc.id && "ring-2 ring-primary")}>
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className={cn("badge border text-[10px]", SEV_STYLE[inc.severity])}>{inc.severity}</span>
+                                <span className={cn("badge text-[10px]", STATUS_STYLE[inc.status])}>{inc.status}</span>
+                                <span className="text-[10px] text-gray-400 ml-auto">{formatRelative(inc.createdAt)}</span>
                             </div>
-                            <p className="text-white text-sm font-medium mt-1 line-clamp-2">{i.content}</p>
-                            <p className="text-gray-400 text-xs mt-1">{new Date(i.created_at).toLocaleString("zh-TW")}</p>
-                            {i.contact_phone && <p className="text-gray-300 text-xs">📞 {i.contact_phone}</p>}
-                        </div>
-                    </button>
-                    {expanded === i.id && (
-                        <div className="border-t border-gray-700 p-4 space-y-3">
-                            <p className="text-gray-300 text-sm whitespace-pre-wrap">{i.content}</p>
-                            <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Internal notes" className="w-full bg-gray-900 text-white border border-gray-600 rounded-xl px-3 py-2 text-sm h-20 resize-none" />
-                            <div className="flex gap-2">
-                                <button onClick={() => update(i.id, "triaged")} className="flex-1 py-2 bg-purple-800 text-purple-200 rounded-xl text-xs font-semibold">Mark Triaged</button>
-                                <button onClick={() => update(i.id, "resolved")} className="flex-1 py-2 bg-green-800 text-green-200 rounded-xl text-xs font-semibold">Mark Resolved</button>
-                            </div>
-                        </div>
-                    )}
+                            <p className="text-xs font-semibold text-gray-900 capitalize mb-1">{inc.category.replace("_", " ")}</p>
+                            <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{inc.content}</p>
+                        </button>
+                    ))}
+                    {incidents.length === 0 && <p className="card p-8 text-center text-sm text-gray-400">No incidents reported</p>}
                 </div>
-            ))}
-        </div>
+
+                {/* Detail / update */}
+                {selected && (
+                    <div className="card p-4 self-start space-y-3">
+                        <p className="text-sm font-bold text-gray-900">Incident Detail</p>
+                        <div className="flex gap-2">
+                            <span className={cn("badge border text-[10px]", SEV_STYLE[selected.severity])}>{selected.severity}</span>
+                            <span className="badge text-[10px] bg-gray-100 text-gray-600 capitalize">{selected.category}</span>
+                        </div>
+                        <p className="text-xs text-gray-700 leading-relaxed bg-gray-50 rounded-xl p-3">{selected.content}</p>
+                        {selected.contactPhone && <p className="text-xs text-gray-500">📞 {selected.contactPhone}</p>}
+                        <div>
+                            <p className="text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Update Status</p>
+                            <div className="flex gap-2">
+                                {(["new", "triaged", "resolved"] as IncidentStatus[]).map(s => (
+                                    <button key={s} onClick={() => setNewStatus(s)}
+                                        className={cn("flex-1 py-2 rounded-xl text-xs font-semibold border transition-all capitalize", newStatus === s ? STATUS_STYLE[s] + " border-current" : "bg-white text-gray-500 border-border")}>
+                                        {s}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Internal Notes</p>
+                            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Add notes visible only to staff…" className="input text-sm resize-none" />
+                        </div>
+                        <button onClick={updateIncident} className="btn btn-primary text-sm w-full">Save Update</button>
+                    </div>
+                )}
+            </div>
+        </AdminShell>
     );
 }

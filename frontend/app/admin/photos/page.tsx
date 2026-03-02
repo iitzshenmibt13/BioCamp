@@ -1,61 +1,83 @@
 "use client";
-/** Admin: Photo wall manager – upload, caption, publish/unpublish. */
-import { useEffect, useState, useRef, useCallback } from "react";
-import { api } from "@/lib/api";
+import { useState, useRef } from "react";
+import { Upload, Eye, EyeOff, Trash2 } from "lucide-react";
+import { AdminShell } from "@/components/AdminShell";
+import { MOCK_PHOTOS, MOCK_USER_ADMIN } from "@/lib/mock";
+import type { Photo } from "@/lib/types";
 import toast from "react-hot-toast";
 
 export default function AdminPhotosPage() {
-    const [photos, setPhotos] = useState<any[]>([]);
+    const user = MOCK_USER_ADMIN;
+    const [photos, setPhotos] = useState<Photo[]>(MOCK_PHOTOS);
     const [caption, setCaption] = useState("");
+    const [preview, setPreview] = useState<string | null>(null);
     const fileRef = useRef<HTMLInputElement>(null);
-    const [uploading, setUploading] = useState(false);
 
-    const load = useCallback(async () => { const r = await api.get("/api/photos"); setPhotos(r.data); }, []);
-    useEffect(() => { load(); }, [load]);
+    function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        setPreview(url);
+    }
 
-    const upload = async () => {
-        const file = fileRef.current?.files?.[0];
-        if (!file) { toast.error("Select a photo"); return; }
-        setUploading(true);
-        const form = new FormData();
-        form.append("file", file);
-        if (caption) form.append("caption", caption);
-        try {
-            await api.post("/api/photos", form, { headers: { "Content-Type": "multipart/form-data" } });
-            toast.success("Uploaded!"); setCaption(""); if (fileRef.current) fileRef.current.value = "";
-            await load();
-        } catch { toast.error("Upload failed"); }
-        finally { setUploading(false); }
-    };
+    function upload() {
+        if (!preview) { toast.error("Select a photo first."); return; }
+        const newPhoto: Photo = {
+            id: Date.now().toString(), url: preview, caption, isPublished: false,
+            likeCount: 0, takenAt: new Date().toISOString(), uploadedByName: user.name,
+        };
+        setPhotos(p => [newPhoto, ...p]);
+        setPreview(null); setCaption(""); if (fileRef.current) fileRef.current.value = "";
+        toast.success("Photo uploaded!");
+    }
 
-    const toggle = async (id: string, current: boolean) => {
-        await api.patch(`/api/photos/${id}`, undefined, { params: { is_published: !current } });
-        toast.success(!current ? "Published!" : "Unpublished"); await load();
-    };
+    function togglePublish(id: string) {
+        setPhotos(p => p.map(ph => ph.id === id ? { ...ph, isPublished: !ph.isPublished } : ph));
+    }
+    function remove(id: string) { setPhotos(p => p.filter(ph => ph.id !== id)); toast("Deleted", { icon: "🗑️" }); }
 
     return (
-        <div className="space-y-4">
-            <h1 className="text-2xl font-bold text-white">📸 Photo Wall Manager</h1>
-            <div className="bg-gray-800 rounded-2xl border border-gray-700 p-5 space-y-3">
-                <p className="text-white font-semibold">Upload Photo</p>
-                <input ref={fileRef} type="file" accept="image/*" className="text-sm text-gray-400" />
-                <input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption (optional)" className="w-full bg-gray-700 text-white border border-gray-600 rounded-xl px-3 py-2 text-sm" />
-                <button onClick={upload} disabled={uploading} className="w-full py-3 bg-primary-600 text-white rounded-xl text-sm font-semibold hover:bg-primary-700 disabled:opacity-50">{uploading ? "Uploading..." : "Upload"}</button>
+        <AdminShell user={user} title="Photo Manager">
+            {/* Upload area */}
+            <div className="card p-4 mb-4">
+                <p className="text-sm font-bold text-gray-900 mb-3">Upload Photo</p>
+                <div
+                    onClick={() => fileRef.current?.click()}
+                    className="border-2 border-dashed border-gray-200 rounded-2xl p-8 flex flex-col items-center gap-2 cursor-pointer hover:border-primary hover:bg-primary-soft/30 transition-colors mb-3">
+                    {preview ? (
+                        <img src={preview} className="w-32 h-32 object-cover rounded-xl" />
+                    ) : (
+                        <>
+                            <Upload size={28} className="text-gray-300" />
+                            <p className="text-sm text-gray-400">Tap to select photo</p>
+                        </>
+                    )}
+                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+                </div>
+                <input value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption (optional)" className="input text-sm mb-2" />
+                <button onClick={upload} className="btn btn-primary text-sm w-full gap-2"><Upload size={14} /> Upload & Save</button>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {photos.map(p => (
-                    <div key={p.id} className="bg-gray-800 rounded-xl overflow-hidden border border-gray-700">
-                        <img src={p.url} alt={p.caption || ""} className="w-full aspect-square object-cover" />
-                        <div className="p-2">
-                            {p.caption && <p className="text-gray-300 text-xs mb-1 line-clamp-2">{p.caption}</p>}
-                            <button onClick={() => toggle(p.id, p.is_published)}
-                                className={`w-full py-1.5 rounded-lg text-xs font-semibold ${p.is_published ? "bg-red-900 text-red-300" : "bg-green-900 text-green-300"}`}>
-                                {p.is_published ? "Unpublish" : "Publish"}
-                            </button>
+
+            {/* Photo grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {photos.map(ph => (
+                    <div key={ph.id} className="card overflow-hidden">
+                        <div className="relative">
+                            <img src={ph.url} alt={ph.caption || ""} className="w-full h-32 object-cover" />
+                            <div className="absolute top-1.5 right-1.5 flex gap-1">
+                                <button onClick={() => togglePublish(ph.id)}
+                                    className={`w-7 h-7 flex items-center justify-center rounded-lg text-white ${ph.isPublished ? "bg-success" : "bg-gray-500"}`} title={ph.isPublished ? "Unpublish" : "Publish"}>
+                                    {ph.isPublished ? <Eye size={13} /> : <EyeOff size={13} />}
+                                </button>
+                                <button onClick={() => remove(ph.id)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-danger text-white" title="Delete">
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
                         </div>
+                        <p className="text-[10px] text-gray-500 px-2 py-1.5 truncate">{ph.caption || "No caption"}</p>
                     </div>
                 ))}
             </div>
-        </div>
+        </AdminShell>
     );
 }

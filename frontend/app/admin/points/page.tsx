@@ -1,103 +1,97 @@
 "use client";
-/** Admin: Points console – add transaction, audit log, undo. */
-import { useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
+import { useState } from "react";
+import { RotateCcw, Send } from "lucide-react";
+import { AdminShell } from "@/components/AdminShell";
+import { PointsTransactionRow } from "@/components/PointsTransactionRow";
+import { MOCK_GROUPS, MOCK_TRANSACTIONS, MOCK_USER_ADMIN } from "@/lib/mock";
+import type { PointCategory } from "@/lib/types";
 import toast from "react-hot-toast";
+import { cn } from "@/lib/utils";
 
-const CATEGORIES = ["game", "homework", "attendance", "bonus", "penalty"] as const;
-const CATEGORY_ICON: Record<string, string> = { game: "🎮", homework: "📝", attendance: "✅", bonus: "⭐", penalty: "❌" };
+const CATEGORIES: PointCategory[] = ["game", "homework", "attendance", "bonus", "penalty"];
 
 export default function AdminPointsPage() {
-    const [groups, setGroups] = useState<any[]>([]);
-    const [form, setForm] = useState({ group_id: "", delta_points: "5", category: "bonus", reason: "" });
-    const [transactions, setTransactions] = useState<any[]>([]);
+    const user = MOCK_USER_ADMIN;
+    const [txs, setTxs] = useState(MOCK_TRANSACTIONS);
+    const [groupId, setGroupId] = useState(MOCK_GROUPS[0].id);
+    const [delta, setDelta] = useState("");
+    const [category, setCategory] = useState<PointCategory>("game");
+    const [reason, setReason] = useState("");
+    const [submitting, setSubmitting] = useState(false);
 
-    const loadGroups = useCallback(async () => {
-        const r = await api.get("/api/groups");
-        setGroups(r.data);
-        if (r.data.length > 0 && !form.group_id) setForm(f => ({ ...f, group_id: r.data[0].id }));
-    }, []);
+    async function submit() {
+        if (!delta || !reason.trim()) { toast.error("Fill in all fields."); return; }
+        setSubmitting(true);
+        await new Promise(r => setTimeout(r, 500));
+        const group = MOCK_GROUPS.find(g => g.id === groupId)!;
+        const newTx = {
+            id: Date.now().toString(), groupId, groupName: group.name, groupColor: group.color,
+            deltaPoints: Number(delta), category, reason, createdByName: user.name,
+            createdAt: new Date().toISOString(), isReversed: false,
+        };
+        setTxs(p => [newTx, ...p]);
+        setDelta(""); setReason("");
+        setSubmitting(false);
+        toast.success("Transaction added!");
+    }
 
-    const loadTransactions = useCallback(async (gid: string) => {
-        if (!gid) return;
-        const r = await api.get(`/api/points/group/${gid}/transactions`);
-        setTransactions(r.data);
-    }, []);
-
-    useEffect(() => { loadGroups(); }, [loadGroups]);
-    useEffect(() => { if (form.group_id) loadTransactions(form.group_id); }, [form.group_id, loadTransactions]);
-
-    const submit = async () => {
-        if (!form.group_id || !form.reason) { toast.error("Fill in all fields"); return; }
-        try {
-            await api.post("/api/points/transactions", {
-                group_id: form.group_id,
-                delta_points: Number(form.delta_points),
-                category: form.category,
-                reason: form.reason,
-            });
-            toast.success("Transaction added!");
-            setForm(f => ({ ...f, reason: "" }));
-            await loadTransactions(form.group_id);
-        } catch { toast.error("Failed"); }
-    };
-
-    const undo = async (txId: string) => {
-        try {
-            await api.post(`/api/points/transactions/${txId}/undo`);
-            toast.success("Undone!"); await loadTransactions(form.group_id);
-        } catch (e: any) { toast.error(e.response?.data?.detail || "Undo failed"); }
-    };
+    function undo(id: string) {
+        setTxs(p => p.map(t => t.id === id ? { ...t, isReversed: true, reversedAt: new Date().toISOString() } : t));
+        toast("Undone", { icon: "↩️" });
+    }
 
     return (
-        <div className="space-y-4">
-            <h1 className="text-2xl font-bold text-white">🏆 Points Console</h1>
-
-            <div className="bg-gray-800 rounded-2xl border border-gray-700 p-5 space-y-3">
-                <p className="text-white font-semibold">Add Transaction</p>
-                <div className="grid grid-cols-2 gap-2">
+        <AdminShell user={user} title="Points Console">
+            <div className="grid md:grid-cols-2 gap-4">
+                {/* Composer */}
+                <div className="card p-4 space-y-3 self-start">
+                    <p className="text-sm font-bold text-gray-900">Add Transaction</p>
                     <div>
-                        <label className="block text-gray-400 text-xs mb-1">Group</label>
-                        <select value={form.group_id} onChange={e => setForm({ ...form, group_id: e.target.value })} className="w-full bg-gray-700 text-white border border-gray-600 rounded-xl px-3 py-2 text-sm">
-                            {groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.total_points} pts)</option>)}
+                        <p className="text-xs text-gray-500 mb-1">Group</p>
+                        <select value={groupId} onChange={e => setGroupId(e.target.value)} className="input text-sm">
+                            {MOCK_GROUPS.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                         </select>
                     </div>
-                    <div>
-                        <label className="block text-gray-400 text-xs mb-1">Points (can be negative)</label>
-                        <input type="number" value={form.delta_points} onChange={e => setForm({ ...form, delta_points: e.target.value })} className="w-full bg-gray-700 text-white border border-gray-600 rounded-xl px-3 py-2 text-sm" />
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <p className="text-xs text-gray-500 mb-1">Points (+ or -)</p>
+                            <input type="number" value={delta} onChange={e => setDelta(e.target.value)} placeholder="e.g. 50 or -10" className="input text-sm" />
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500 mb-1">Category</p>
+                            <select value={category} onChange={e => setCategory(e.target.value as PointCategory)} className="input text-sm capitalize">
+                                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
                     </div>
+                    <div>
+                        <p className="text-xs text-gray-500 mb-1">Reason</p>
+                        <input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Round 2 Win" className="input text-sm" />
+                    </div>
+                    <button onClick={submit} disabled={submitting} className="btn btn-primary w-full gap-2 text-sm disabled:opacity-50">
+                        <Send size={14} /> {submitting ? "Adding…" : "Add Transaction"}
+                    </button>
                 </div>
-                <div>
-                    <label className="block text-gray-400 text-xs mb-1">Category</label>
-                    <div className="flex gap-2 flex-wrap">
-                        {CATEGORIES.map(c => (
-                            <button key={c} onClick={() => setForm({ ...form, category: c })}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-medium ${form.category === c ? "bg-primary-600 text-white" : "bg-gray-700 text-gray-300"}`}>
-                                {CATEGORY_ICON[c]} {c}
-                            </button>
+
+                {/* Transaction log */}
+                <div className="card overflow-hidden self-start">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide px-4 py-3 border-b border-border">All Transactions</p>
+                    <div className="max-h-[60vh] overflow-y-auto px-4">
+                        {txs.map(tx => (
+                            <div key={tx.id} className="flex items-center gap-2">
+                                <div className="flex-1 min-w-0">
+                                    <PointsTransactionRow tx={tx} />
+                                </div>
+                                {!tx.isReversed && (
+                                    <button onClick={() => undo(tx.id)} className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Undo">
+                                        <RotateCcw size={13} />
+                                    </button>
+                                )}
+                            </div>
                         ))}
                     </div>
                 </div>
-                <input value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} placeholder="Reason *" className="w-full bg-gray-700 text-white border border-gray-600 rounded-xl px-3 py-2 text-sm" />
-                <button onClick={submit} className="w-full py-3 bg-primary-600 text-white rounded-xl text-sm font-semibold hover:bg-primary-700">Add Transaction</button>
             </div>
-
-            <div className="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden">
-                <p className="px-4 py-3 text-gray-400 text-xs font-semibold uppercase border-b border-gray-700">Recent Transactions</p>
-                {transactions.length === 0 ? <p className="p-6 text-center text-gray-500 text-sm">No transactions yet.</p> : transactions.slice(0, 30).map(tx => (
-                    <div key={tx.id} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-700 last:border-0 ${tx.is_reversed ? "opacity-40" : ""}`}>
-                        <span className="text-lg">{CATEGORY_ICON[tx.category]}</span>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-white text-sm font-medium truncate">{tx.reason}</p>
-                            <p className="text-gray-400 text-xs">{tx.created_by_name} · {new Date(tx.created_at).toLocaleString("zh-TW")}</p>
-                        </div>
-                        <span className={`font-bold shrink-0 ${tx.delta_points > 0 ? "text-green-400" : "text-red-400"}`}>{tx.delta_points > 0 ? "+" : ""}{tx.delta_points}</span>
-                        {!tx.is_reversed && (
-                            <button onClick={() => undo(tx.id)} className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600">↩</button>
-                        )}
-                    </div>
-                ))}
-            </div>
-        </div>
+        </AdminShell>
     );
 }

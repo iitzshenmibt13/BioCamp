@@ -1,119 +1,105 @@
 "use client";
-/** Admin: Homework – create assignments, view submissions, grade with rubric. */
-import { useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
+import { useState } from "react";
+import { Plus, Star } from "lucide-react";
+import { AdminShell } from "@/components/AdminShell";
+import { MOCK_ASSIGNMENTS, MOCK_SUBMISSIONS, MOCK_GROUPS, MOCK_USER_ADMIN } from "@/lib/mock";
+import { formatRelative, getGroupStyle } from "@/lib/utils";
 import toast from "react-hot-toast";
 
 export default function AdminHomeworkPage() {
-    const [assignments, setAssignments] = useState<any[]>([]);
-    const [submissions, setSubmissions] = useState<any[]>([]);
-    const [selectedAssignment, setSelectedAssignment] = useState<string | null>(null);
-    const [creating, setCreating] = useState(false);
-    const [form, setForm] = useState({ title: "", instructions: "", max_score: 100, auto_award_points: "" });
-    const [gradingId, setGradingId] = useState<string | null>(null);
-    const [gradeForm, setGradeForm] = useState({ score: 0, feedback: "", publish: true });
+    const user = MOCK_USER_ADMIN;
+    const [selected, setSelected] = useState(MOCK_ASSIGNMENTS[0]);
+    const [grading, setGrading] = useState<string | null>(null);
+    const [score, setScore] = useState("");
+    const [feedback, setFeedback] = useState("");
+    const [newTitle, setNewTitle] = useState("");
+    const [newDue, setNewDue] = useState("");
+    const [showCreate, setShowCreate] = useState(false);
 
-    const loadAssignments = useCallback(async () => {
-        const r = await api.get("/api/homework/assignments");
-        setAssignments(r.data);
-    }, []);
+    const subs = MOCK_SUBMISSIONS.filter(s => s.assignmentId === selected?.id);
 
-    const loadSubmissions = useCallback(async (aId: string) => {
-        const r = await api.get(`/api/homework/submissions?assignment_id=${aId}`);
-        setSubmissions(r.data);
-    }, []);
-
-    useEffect(() => { loadAssignments(); }, [loadAssignments]);
-    useEffect(() => { if (selectedAssignment) loadSubmissions(selectedAssignment); }, [selectedAssignment, loadSubmissions]);
-
-    const createAssignment = async () => {
-        try {
-            await api.post("/api/homework/assignments", {
-                ...form, max_score: Number(form.max_score),
-                auto_award_points: form.auto_award_points ? Number(form.auto_award_points) : null
-            });
-            toast.success("Assignment created!"); setCreating(false); await loadAssignments();
-        } catch { toast.error("Failed"); }
-    };
-
-    const grade = async (subId: string) => {
-        try {
-            await api.post("/api/homework/grades", { submission_id: subId, ...gradeForm, score: Number(gradeForm.score) });
-            toast.success("Graded!"); setGradingId(null); await loadSubmissions(selectedAssignment!);
-        } catch { toast.error("Failed"); }
-    };
+    function submitGrade(subId: string) {
+        if (!score) { toast.error("Enter a score."); return; }
+        toast.success("Grade saved!");
+        setGrading(null);
+        setScore(""); setFeedback("");
+    }
 
     return (
-        <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-white">📝 Homework Manager</h1>
-                <button onClick={() => setCreating(true)} className="px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-semibold hover:bg-primary-700">+ Assignment</button>
+        <AdminShell user={user} title="Homework">
+            {/* Assignment selector */}
+            <div className="flex gap-2 overflow-x-auto no-scrollbar mb-4">
+                {MOCK_ASSIGNMENTS.map(a => (
+                    <button key={a.id} onClick={() => setSelected(a)}
+                        className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${selected?.id === a.id ? "bg-primary text-white" : "bg-gray-100 text-gray-600"}`}>
+                        {a.title}
+                    </button>
+                ))}
+                <button onClick={() => setShowCreate(v => !v)}
+                    className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 flex items-center gap-1">
+                    <Plus size={12} /> New
+                </button>
             </div>
 
-            {creating && (
-                <div className="bg-gray-800 rounded-2xl p-5 border border-gray-700 space-y-3">
-                    <p className="text-white font-semibold">New Assignment</p>
-                    <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Title" className="w-full bg-gray-700 text-white border border-gray-600 rounded-xl px-3 py-2 text-sm" />
-                    <textarea value={form.instructions} onChange={e => setForm({ ...form, instructions: e.target.value })} placeholder="Instructions" className="w-full bg-gray-700 text-white border border-gray-600 rounded-xl px-3 py-2 text-sm h-24 resize-none" />
-                    <div className="grid grid-cols-2 gap-2">
-                        <input type="number" value={form.max_score} onChange={e => setForm({ ...form, max_score: Number(e.target.value) })} placeholder="Max score" className="bg-gray-700 text-white border border-gray-600 rounded-xl px-3 py-2 text-sm" />
-                        <input type="number" value={form.auto_award_points} onChange={e => setForm({ ...form, auto_award_points: e.target.value })} placeholder="Auto-award pts (optional)" className="bg-gray-700 text-white border border-gray-600 rounded-xl px-3 py-2 text-sm" />
-                    </div>
-                    <div className="flex gap-2">
-                        <button onClick={createAssignment} className="flex-1 py-2 bg-primary-600 text-white rounded-xl text-sm font-semibold">Create</button>
-                        <button onClick={() => setCreating(false)} className="px-4 py-2 bg-gray-700 text-gray-300 rounded-xl text-sm">Cancel</button>
-                    </div>
+            {/* Create form */}
+            {showCreate && (
+                <div className="card p-4 mb-4 space-y-3">
+                    <p className="text-sm font-bold">New Assignment</p>
+                    <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Title" className="input text-sm" />
+                    <input type="datetime-local" value={newDue} onChange={e => setNewDue(e.target.value)} className="input text-sm" />
+                    <button onClick={() => { toast.success("Assignment created!"); setShowCreate(false); }} className="btn btn-primary text-sm w-full">Create</button>
                 </div>
             )}
 
-            <div className="grid md:grid-cols-3 gap-4">
-                {/* Assignment list */}
-                <div className="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden">
-                    <p className="px-4 py-3 text-gray-400 text-xs font-semibold uppercase border-b border-gray-700">Assignments</p>
-                    {assignments.map(a => (
-                        <button key={a.id} onClick={() => setSelectedAssignment(a.id)}
-                            className={`w-full text-left px-4 py-3 border-b border-gray-700 last:border-0 transition-colors ${selectedAssignment === a.id ? "bg-gray-700" : "hover:bg-gray-750"}`}>
-                            <p className="text-white font-medium text-sm truncate">{a.title}</p>
-                            <p className="text-gray-400 text-xs">Max: {a.max_score} pts</p>
-                        </button>
-                    ))}
-                </div>
-
-                {/* Submissions + grading */}
-                <div className="md:col-span-2 bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden">
-                    <p className="px-4 py-3 text-gray-400 text-xs font-semibold uppercase border-b border-gray-700">
-                        {selectedAssignment ? `Submissions (${submissions.length})` : "Select an assignment"}
-                    </p>
-                    {submissions.map(s => (
-                        <div key={s.id} className="p-4 border-b border-gray-700 last:border-0">
-                            <div className="flex items-start justify-between gap-2">
-                                <div>
-                                    <p className="text-white text-sm font-medium">{s.submitted_by}</p>
-                                    <p className="text-gray-400 text-xs">{new Date(s.submitted_at).toLocaleString("zh-TW")}</p>
-                                    {s.content_text && <p className="text-gray-300 text-xs mt-1 line-clamp-2">{s.content_text}</p>}
-                                    {s.file_url && <a href={s.file_url} target="_blank" rel="noreferrer" className="text-primary-400 text-xs underline">📎 File</a>}
-                                </div>
-                                <button onClick={() => { setGradingId(s.id); setGradeForm({ score: 0, feedback: "", publish: true }); }}
-                                    className="px-3 py-1.5 bg-primary-700 text-primary-200 rounded-lg text-xs shrink-0">Grade</button>
-                            </div>
-                            {gradingId === s.id && (
-                                <div className="mt-3 bg-gray-900 rounded-xl p-3 space-y-2">
-                                    <input type="number" value={gradeForm.score} onChange={e => setGradeForm({ ...gradeForm, score: Number(e.target.value) })} placeholder="Score" className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm" />
-                                    <textarea value={gradeForm.feedback} onChange={e => setGradeForm({ ...gradeForm, feedback: e.target.value })} placeholder="Feedback" className="w-full bg-gray-800 text-white border border-gray-700 rounded-lg px-3 py-2 text-sm h-20 resize-none" />
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input type="checkbox" checked={gradeForm.publish} onChange={e => setGradeForm({ ...gradeForm, publish: e.target.checked })} />
-                                        <span className="text-gray-300 text-xs">Publish immediately</span>
-                                    </label>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => grade(s.id)} className="flex-1 py-2 bg-green-700 text-green-200 rounded-lg text-xs font-semibold">Save Grade</button>
-                                        <button onClick={() => setGradingId(null)} className="px-4 py-2 bg-gray-700 text-gray-400 rounded-lg text-xs">Cancel</button>
+            {/* Submissions */}
+            {selected && (
+                <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Submissions for {selected.title}</p>
+                    {subs.length === 0 ? (
+                        <div className="card p-8 text-center text-sm text-gray-400">No submissions yet</div>
+                    ) : (
+                        <div className="space-y-3">
+                            {subs.map(sub => {
+                                const gs = getGroupStyle(sub.groupName);
+                                return (
+                                    <div key={sub.id} className="card p-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-3 h-3 rounded-full" style={{ background: gs.color }} />
+                                                <p className="text-sm font-bold text-gray-900">{sub.groupName}</p>
+                                            </div>
+                                            <p className="text-xs text-gray-400">{formatRelative(sub.submittedAt)}</p>
+                                        </div>
+                                        {sub.textContent && <p className="text-xs text-gray-600 leading-relaxed mb-3 line-clamp-3">{sub.textContent}</p>}
+                                        {sub.grade?.isPublished ? (
+                                            <div className="flex items-center gap-2">
+                                                <Star size={14} className="text-success" fill="currentColor" />
+                                                <p className="text-sm font-bold text-success">{sub.grade.score}/{sub.grade.maxScore}</p>
+                                                <p className="text-xs text-gray-400">Graded</p>
+                                            </div>
+                                        ) : grading === sub.id ? (
+                                            <div className="space-y-2">
+                                                <div className="flex gap-2">
+                                                    <input type="number" value={score} onChange={e => setScore(e.target.value)}
+                                                        placeholder={`Score / ${selected.maxScore}`} className="input text-sm flex-1" />
+                                                </div>
+                                                <textarea value={feedback} onChange={e => setFeedback(e.target.value)}
+                                                    placeholder="Feedback (optional)" rows={2} className="input text-sm resize-none" />
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => setGrading(null)} className="btn btn-ghost text-xs flex-1">Cancel</button>
+                                                    <button onClick={() => submitGrade(sub.id)} className="btn btn-primary text-xs flex-1">Save Grade</button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setGrading(sub.id)} className="btn btn-soft text-xs w-full">Grade</button>
+                                        )}
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })}
                         </div>
-                    ))}
+                    )}
                 </div>
-            </div>
-        </div>
+            )}
+        </AdminShell>
     );
 }

@@ -1,121 +1,81 @@
 "use client";
-/**
- * Points / Leaderboard page – real-time with WS, filterable by category.
- * Offline-capable: caches leaderboard in localStorage.
- */
-import { useEffect, useState, useCallback } from "react";
-import { api } from "@/lib/api";
-import { useWebSocket } from "@/lib/ws";
-import BottomNav from "@/components/BottomNav";
-import AuthGate from "@/components/AuthGate";
-
-const CACHE_KEY = "camp_leaderboard";
-const CATEGORIES = ["all", "game", "homework", "attendance", "bonus", "penalty"] as const;
-
-type LeaderboardEntry = { group_id: string; name: string; color: string; total_points: number; rank: number; last_reason?: string; last_change?: number };
-type Transaction = { id: string; delta_points: number; category: string; reason: string; created_at: string; created_by_name: string; is_reversed: boolean };
+import Link from "next/link";
+import { CamperLayout } from "@/components/CamperLayout";
+import { LeaderboardRow } from "@/components/LeaderboardRow";
+import { MOCK_GROUPS, MOCK_USER_CAMPER } from "@/lib/mock";
 
 export default function PointsPage() {
-    const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-    const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-    const [transactions, setTransactions] = useState<Transaction[]>([]);
-    const [category, setCategory] = useState<string>("all");
-    const [offline, setOffline] = useState(false);
-    const [loading, setLoading] = useState(true);
+    const user = MOCK_USER_CAMPER;
+    const sorted = [...MOCK_GROUPS].sort((a, b) => b.totalPoints - a.totalPoints);
+    const top3 = sorted.slice(0, 3);
+    const myGroup = sorted.find(g => g.id === user.groupId);
 
-    const loadLeaderboard = useCallback(async () => {
-        try {
-            const resp = await api.get("/api/points/leaderboard");
-            setLeaderboard(resp.data);
-            setOffline(false);
-            localStorage.setItem(CACHE_KEY, JSON.stringify({ data: resp.data, ts: new Date().toISOString() }));
-        } catch {
-            const cached = localStorage.getItem(CACHE_KEY);
-            if (cached) { setLeaderboard(JSON.parse(cached).data); setOffline(true); }
-        } finally { setLoading(false); }
-    }, []);
-
-    const loadTransactions = useCallback(async (groupId: string) => {
-        try {
-            const params = category !== "all" ? `?category=${category}` : "";
-            const resp = await api.get(`/api/points/group/${groupId}/transactions${params}`);
-            setTransactions(resp.data);
-        } catch { }
-    }, [category]);
-
-    useEffect(() => { loadLeaderboard(); }, [loadLeaderboard]);
-    useWebSocket({ points_updated: loadLeaderboard });
-    useEffect(() => { if (selectedGroup) loadTransactions(selectedGroup); }, [selectedGroup, category, loadTransactions]);
-
-    const rankIcon = (rank: number) => rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `#${rank}`;
-    const categoryIcon: Record<string, string> = { game: "🎮", homework: "📝", attendance: "✅", bonus: "⭐", penalty: "❌" };
+    const podiumOrder = top3.length >= 3 ? [top3[1], top3[0], top3[2]] : top3;
+    const podiumHeights = [80, 108, 60];
+    const podiumLabels = ["2nd", "1st", "3rd"];
 
     return (
-        <AuthGate>
-            <div className="min-h-screen bg-gray-50 pb-20">
-                <div className="bg-gradient-to-br from-yellow-500 to-orange-400 text-white px-4 pt-10 pb-6">
-                    <h1 className="text-2xl font-bold">🏆 Leaderboard</h1>
-                    {offline && <p className="text-xs text-yellow-100 mt-1">⚠️ Offline – showing cached data</p>}
-                </div>
+        <CamperLayout title="Points" user={user} showBell noPad>
+            <div className="pb-24 pt-4 space-y-4">
 
-                <div className="p-4 space-y-3">
-                    {loading ? <p className="text-center text-gray-400 py-8">Loading...</p> : (
-                        leaderboard.map((g) => (
-                            <button key={g.group_id} onClick={() => setSelectedGroup(selectedGroup === g.group_id ? null : g.group_id)}
-                                className={`card w-full text-left p-4 transition-all ${selectedGroup === g.group_id ? "ring-2 ring-primary-500" : ""}`}>
-                                <div className="flex items-center gap-3">
-                                    <span className={`text-2xl font-black w-10 text-center ${g.rank <= 3 ? `rank-${g.rank}` : "text-gray-400"}`}>{rankIcon(g.rank)}</span>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="w-3 h-3 rounded-full inline-block shrink-0" style={{ backgroundColor: g.color }} />
-                                            <p className="font-bold text-gray-900">{g.name}</p>
+                {/* ── PODIUM ── */}
+                <div className="px-4">
+                    <div className="card p-4">
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4 text-center">Leaderboard</p>
+                        <div className="flex items-end justify-center gap-3">
+                            {podiumOrder.map((group, i) => {
+                                if (!group) return <div key={i} className="w-24" />;
+                                const style = group.color;
+                                return (
+                                    <div key={group.id} className="flex flex-col items-center gap-1 w-24">
+                                        <span className="text-[10px] font-bold text-gray-500">{podiumLabels[i]}</span>
+                                        <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-white text-xs font-bold"
+                                            style={{ background: style }}>
+                                            {group.name.split(" ")[1]?.[0]}
                                         </div>
-                                        {g.last_reason && <p className="text-xs text-gray-400 truncate mt-0.5">{g.last_reason}</p>}
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-xl font-black" style={{ color: g.color }}>{g.total_points.toLocaleString()}</p>
-                                        {g.last_change && <p className={`text-xs font-medium ${g.last_change > 0 ? "text-green-500" : "text-red-500"}`}>{g.last_change > 0 ? "+" : ""}{g.last_change}</p>}
-                                    </div>
-                                </div>
-                            </button>
-                        ))
-                    )}
-
-                    {/* Transactions panel */}
-                    {selectedGroup && (
-                        <div className="card">
-                            <div className="px-4 pt-4 pb-2">
-                                <p className="font-semibold text-gray-700">Transaction Log</p>
-                                <div className="flex gap-2 mt-2 overflow-x-auto pb-1">
-                                    {CATEGORIES.map(c => (
-                                        <button key={c} onClick={() => setCategory(c)}
-                                            className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${category === c ? "bg-primary-600 text-white" : "bg-gray-100 text-gray-600"}`}>
-                                            {c === "all" ? "All" : `${categoryIcon[c]} ${c}`}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
-                                {transactions.length === 0 ? (
-                                    <p className="px-4 py-6 text-center text-gray-400 text-sm">No transactions.</p>
-                                ) : transactions.map((tx) => (
-                                    <div key={tx.id} className={`flex items-center gap-3 px-4 py-3 ${tx.is_reversed ? "opacity-40 line-through" : ""}`}>
-                                        <span className="text-xl">{categoryIcon[tx.category] || "•"}</span>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-800 truncate">{tx.reason}</p>
-                                            <p className="text-xs text-gray-400">{tx.created_by_name} · {new Date(tx.created_at).toLocaleString("zh-TW")}</p>
+                                        <p className="text-[11px] font-bold text-gray-800 text-center leading-tight">{group.name}</p>
+                                        <div className="w-full rounded-t-xl flex items-center justify-center text-white text-xs font-bold"
+                                            style={{ height: podiumHeights[i], background: style + "30", border: `2px solid ${style}40` }}>
+                                            <span style={{ color: style }} className="font-bold text-[13px]">{group.totalPoints.toLocaleString()}</span>
                                         </div>
-                                        <span className={`font-bold text-sm shrink-0 ${tx.delta_points > 0 ? "text-green-600" : "text-red-500"}`}>
-                                            {tx.delta_points > 0 ? "+" : ""}{tx.delta_points}
-                                        </span>
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })}
                         </div>
-                    )}
+                    </div>
                 </div>
-                <BottomNav active="points" />
+
+                {/* ── FULL RANKING ── */}
+                <div className="px-4">
+                    <div className="card overflow-hidden">
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide px-4 pt-3 pb-2">Full Ranking</p>
+                        {sorted.map((group, i) => (
+                            <LeaderboardRow key={group.id} group={group} rank={i + 1} isMyGroup={group.id === user.groupId} />
+                        ))}
+                    </div>
+                </div>
+
+                {/* ── MY GROUP CARD ── */}
+                {myGroup && (
+                    <div className="px-4">
+                        <div className="card p-4 border-2" style={{ borderColor: myGroup.color + "50", background: myGroup.color + "08" }}>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs font-semibold text-gray-500">My Group</p>
+                                    <p className="text-base font-bold mt-0.5" style={{ color: myGroup.color }}>{myGroup.name}</p>
+                                    <p className="text-2xl font-bold text-gray-900 mt-1">{myGroup.totalPoints.toLocaleString()} pts</p>
+                                    <p className="text-xs text-success font-medium mt-0.5">+{myGroup.todayPoints} today</p>
+                                </div>
+                                <div className="text-4xl">{sorted.indexOf(myGroup) === 0 ? "🥇" : sorted.indexOf(myGroup) === 1 ? "🥈" : sorted.indexOf(myGroup) === 2 ? "🥉" : `#${sorted.indexOf(myGroup) + 1}`}</div>
+                            </div>
+                            <Link href="/points/log"
+                                className="btn btn-ghost w-full mt-3 text-sm" style={{ color: myGroup.color, borderColor: myGroup.color + "40" }}>
+                                View Points Log →
+                            </Link>
+                        </div>
+                    </div>
+                )}
             </div>
-        </AuthGate>
+        </CamperLayout>
     );
 }

@@ -8,21 +8,43 @@ module.exports = {
     theme: {
         extend: {
             colors: {
+                bg: "var(--bg)",
+                surface: "var(--surface)",
                 primary: {
-                    50: "#e8f5e9",
-                    100: "#c8e6c9",
-                    200: "#a5d6a7",
-                    300: "#81c784",
-                    400: "#66bb6a",
-                    500: "#4caf50",
-                    600: "#43a047",
-                    700: "#388e3c",
-                    800: "#2e7d32",
-                    900: "#1b5e20",
+                    DEFAULT: "var(--primary)",
+                    soft: "var(--primary-soft)",
+                    fg: "var(--primary-fg)",
                 },
+                muted: {
+                    DEFAULT: "var(--muted)",
+                    bg: "var(--muted-bg)",
+                },
+                border: "var(--border)",
+                success: "var(--success)",
+                warning: "var(--warning)",
+                danger: "var(--danger)",
             },
-            fontFamily: {
-                sans: ["Inter", "system-ui", "sans-serif"],
+            boxShadow: {
+                soft: "0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.04)",
+                card: "0 2px 8px -2px rgb(0 0 0 / 0.08), 0 1px 4px -1px rgb(0 0 0 / 0.06)",
+                lifted: "0 4px 16px -4px rgb(0 0 0 / 0.12), 0 2px 6px -2px rgb(0 0 0 / 0.08)",
+            },
+            borderRadius: {
+                "2xl": "1rem",
+                "3xl": "1.5rem",
+            },
+            fontSize: {
+                "2xs": ["0.625rem", { lineHeight: "0.875rem" }],
+            },
+            animation: {
+                "fade-in": "fadeIn 0.2s ease-out",
+                "slide-up": "slideUp 0.3s ease-out",
+                "pulse-soft": "pulseSoft 2s ease-in-out infinite",
+            },
+            keyframes: {
+                fadeIn: { from: { opacity: 0 }, to: { opacity: 1 } },
+                slideUp: { from: { transform: "translateY(8px)", opacity: 0 }, to: { transform: "translateY(0)", opacity: 1 } },
+                pulseSoft: { "0%,100%": { opacity: 1 }, "50%": { opacity: 0.6 } },
             },
         },
     },
